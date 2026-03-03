@@ -496,89 +496,70 @@ def preprocess_bw_for_bubbles(roi_bgr):
 
 def detect_bubbles(roi_bgr):
     """
-    Detectează contururile de bulă în ROI.
-    Returnează: bubbles(list), bw(binarizat)
-    bubble: {"cx","cy","bbox","cnt","area","circ"}
+    Detectează bulele ca INELE (margini) folosind Canny + fitEllipse.
+    Returnează bubbles(list), edges(map)
+    bubble: {"cx","cy","bbox","ellipse"}
     """
-    bw = preprocess_bw_for_bubbles(roi_bgr)
-    H, W = bw.shape
-    contours, _ = cv2.findContours(bw, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    gray = cv2.cvtColor(roi_bgr, cv2.COLOR_BGR2GRAY)
+    gray = cv2.GaussianBlur(gray, (5, 5), 0)
 
-    bubbles = []
+    edges = cv2.Canny(gray, 50, 150)
+    k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+    edges = cv2.dilate(edges, k, iterations=1)
+
+    contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+
+    H, W = edges.shape
     img_area = H * W
-
-    # Praguri mai sănătoase (al tău min_area era prea mare și îți pierdea buline)
-    # min_area = img_area * 0.00012
-    min_area = img_area * 0.0015
-    max_area = img_area * 0.01
+    bubbles = []
 
     for cnt in contours:
+        if len(cnt) < 25:
+            continue
+
         area = cv2.contourArea(cnt)
-        if area < min_area or area > max_area:
+        if area < img_area * 0.0002 or area > img_area * 0.02:
+            continue
+
+        ellipse = cv2.fitEllipse(cnt)
+        (cx, cy), (MA, ma), angle = ellipse  # MA/ma = diametre
+
+        if MA <= 0 or ma <= 0:
+            continue
+
+        ar = max(MA, ma) / min(MA, ma)
+        if ar > 1.8:
             continue
 
         x, y, w, h = cv2.boundingRect(cnt)
-        if w < 8 or h < 8:
+        if w < 10 or h < 10:
             continue
-
-        ar = w / float(h)
-        if ar < 0.6 or ar > 1.7:
-            continue
-
-        per = cv2.arcLength(cnt, True)
-        if per <= 0:
-            continue
-        circ = 4 * np.pi * area / (per * per)
-        if circ < 0.28:  # lasă și elipse mai “stricate”
-            continue
-
-        M = cv2.moments(cnt)
-        if M["m00"] == 0:
-            continue
-        cx = int(M["m10"] / M["m00"])
-        cy = int(M["m01"] / M["m00"])
 
         bubbles.append({
-            "cx": cx, "cy": cy,
+            "cx": int(cx), "cy": int(cy),
             "bbox": (x, y, w, h),
-            "cnt": cnt,
-            "area": area,
-            "circ": float(circ)
+            "ellipse": ellipse
         })
 
-    return bubbles, bw
+    return bubbles, edges
 
-def bubble_fill_ratio(bw, bubble, shrink=0.70):
+def bubble_fill_ratio(bw, bubble, shrink=0.75):
     """
-    Calculează % pixeli negri (activi) în interiorul bulei.
-    Folosește o mască eliptică pe bounding box, ușor micșorată.
+    bw = imagine binară INV (255 = negru/cerneală)
+    bubble are bubble["ellipse"]
     """
-    x, y, w, h = bubble["bbox"]
+    ellipse = bubble["ellipse"]
+    (cx, cy), (MA, ma), angle = ellipse
 
-    # protecție la margini
-    x0 = max(0, x); y0 = max(0, y)
-    x1 = min(bw.shape[1], x + w); y1 = min(bw.shape[0], y + h)
-    patch = bw[y0:y1, x0:x1]
-    if patch.size == 0:
-        return 0.0
+    mask = np.zeros_like(bw, dtype=np.uint8)
+    axes = (max(1, int((MA * shrink) / 2)), max(1, int((ma * shrink) / 2)))
 
-    ph, pw = patch.shape
-    mask = np.zeros((ph, pw), dtype=np.uint8)
+    cv2.ellipse(mask, (int(cx), int(cy)), axes, angle, 0, 360, 255, -1)
 
-    cx = pw // 2
-    cy = ph // 2
-    ax = max(1, int((pw * shrink) / 2))
-    ay = max(1, int((ph * shrink) / 2))
-
-    cv2.ellipse(mask, (cx, cy), (ax, ay), 0, 0, 360, 255, -1)
-
-    inside = patch[mask == 255]
+    inside = bw[mask == 255]
     if inside.size == 0:
         return 0.0
-
-    # bw e invertit: pixeli activi = 255
     return float(np.count_nonzero(inside)) / float(inside.size)
-
 def group_bubbles_into_20_rows(bubbles, n_rows=20):
     """
     Grupează bulinele în 20 rânduri folosind k-means pe coordonata cy.
@@ -624,7 +605,11 @@ def read_answers_from_bubbles(roi_bgr, fill_threshold=0.95, n_rows=20, n_choices
     Returnează:
       answers: listă lungime 20, fiecare element = listă de litere active (ex ['B'] sau ['A','D'] sau [])
     """
-    bubbles, bw = detect_bubbles(roi_bgr)
+    bubbles, _edges = detect_bubbles(roi_bgr)
+
+    # bw pentru fill (în interior)
+    bw = preprocess_bw_for_bubbles(roi_bgr)
+
     rows = group_bubbles_into_20_rows(bubbles, n_rows=n_rows)
 
     answers = []
