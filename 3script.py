@@ -107,7 +107,7 @@ def get_10_boxes_fixedBands(page2_bgr):
 # Detectare buline + umplere
 # =========================
 
-def compute_standard_axes(bubbles, shrink=0.75):
+def compute_standard_axes(bubbles, shrink=0.90):
     """
     bubbles: list cu bubble["ellipse"] = ((cx,cy),(MA,ma),angle)
     Returnează axes standard (ax, ay) în pixeli (semi-axe), micșorate cu shrink.
@@ -206,7 +206,7 @@ def detect_bubbles(roi_bgr):
 
     return bubbles, edges
 
-def bubble_fill_ratio(bw, bubble, shrink=0.95):
+def bubble_fill_ratio(bw, bubble, shrink=0.90):
     """
     bw = imagine binară INV (255 = negru/cerneală)
     bubble are bubble["ellipse"]
@@ -264,53 +264,6 @@ def group_bubbles_into_20_rows(bubbles, n_rows=20):
 
     return out
 
-# def read_answers_from_bubbles(roi_bgr, fill_threshold=0.95, n_rows=20, n_choices=5, debug_path=None):
-#     """
-#     Returnează:
-#       answers: listă lungime 20, fiecare element = listă de litere active (ex ['B'] sau ['A','D'] sau [])
-#     """
-#     bubbles, _edges = detect_bubbles(roi_bgr)
-#
-#     # bw pentru fill (în interior)
-#     bw = preprocess_bw_for_bubbles(roi_bgr)
-#     dbg_img = roi_bgr.copy() if debug_path else None
-#
-#     axes_std = compute_standard_axes(bubbles, shrink=0.75)
-#     if axes_std is None:
-#         return [], bw, dbg_img
-#
-#     rows = group_bubbles_into_20_rows(bubbles, n_rows=n_rows)
-#
-#     answers = []
-#
-#     if not rows:
-#         return [], bw, dbg_img
-#
-#     for r_idx, row in enumerate(rows):
-#         # dacă nu avem 5 exact, tot încercăm: sortăm și luăm până la 5
-#         row = sorted(row, key=lambda b: b["cx"])[:n_choices]
-#
-#         active = []
-#         for j, b in enumerate(row):
-#             # ratio = bubble_fill_ratio(bw, b, shrink=0.70)
-#             ratio = fill_ratio_standard(bw, b, axes_std)
-#             if ratio >= fill_threshold:
-#                 active.append("ABCDE"[j])
-#
-#             if dbg_img is not None:
-#                 x, y, w, h = b["bbox"]
-#                 color = (0, 255, 0) if ratio >= fill_threshold else (0, 0, 255)
-#                 cv2.rectangle(dbg_img, (x, y), (x+w, y+h), color, 2)
-#                 cv2.putText(dbg_img, f"{ratio:.2f}", (x, y-5),
-#                             cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
-#
-#         answers.append(active)
-#
-#     if debug_path:
-#         cv2.imwrite(debug_path, dbg_img)
-#
-#     return answers, bw, dbg_img
-
 def read_answers_from_bubbles(roi_bgr, fill_threshold=0.30, n_rows=20, n_choices=5, debug_path=None):
     bubbles, _edges = detect_bubbles(roi_bgr)
 
@@ -319,7 +272,7 @@ def read_answers_from_bubbles(roi_bgr, fill_threshold=0.30, n_rows=20, n_choices
 
     # IMPORTANT: standardizează dimensiunea “chenarului” (oval) pentru toate bulele
     bubbles.sort(key=lambda b: (b["cy"], b["cx"]))
-    axes_std = compute_standard_axes(bubbles, shrink=0.95)
+    axes_std = compute_standard_axes(bubbles, shrink=0.90)
     if axes_std is None:
         return [], bw, (roi_bgr.copy() if debug_path else None)
 
@@ -347,7 +300,7 @@ def read_answers_from_bubbles(roi_bgr, fill_threshold=0.30, n_rows=20, n_choices
                 (cx, cy), (MA, ma), angle = b["ellipse"]
                 cv2.ellipse(dbg_img, (int(cx), int(cy)), axes_std, angle, 0, 360,
                             (0, 255, 0) if ratio >= fill_threshold else (0, 0, 255), 2)
-                cv2.putText(dbg_img, f"{ratio:.2f}", (int(cx)-15, int(cy)-10),
+                cv2.putText(dbg_img, f"{ratio:.2f}", (int(cx)-15, int(cy)-30),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.5,
                             (0, 255, 0) if ratio >= fill_threshold else (0, 0, 255), 1)
 
@@ -405,5 +358,6 @@ for idx, (x0, y0, x1, y1) in enumerate(boxes):
 
 print("Exemplu 1..10 (liste litere active):", [all_answers[i] for i in range(1, 11)])
 print("Exemplu 101..110 (liste litere active):", [all_answers[i] for i in range(101, 111)])
+print("Exemplu 111..120 (liste litere active):", [all_answers[i] for i in range(111, 121)])
 print("Debug: dbg_bubbles_active_box_0.png, dbg_binarized_box_0.png etc.")
 
