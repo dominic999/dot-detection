@@ -5,6 +5,7 @@
 from pdf2image import convert_from_path
 import cv2
 import numpy as np
+import json
 
 # =========================
 # Utils
@@ -14,12 +15,12 @@ def pil_to_bgr(pil_img):
     rgb = np.array(pil_img)  # RGB
     return cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
 
-def binarize_for_layout(img_bgr):
+def binarize_for_layout(img_bgr): # binarizeaza imaginea pentru layout
     gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
     bw = cv2.threshold(gray, 245, 255, cv2.THRESH_BINARY_INV)[1]
     return bw
-
-def smooth_1d(arr, k=51):
+#pentru liniile fine care mai apar scanner best practice
+def smooth_1d(arr, k=51): # smootheaza o dimensiune a imaginii
     k = k if k % 2 == 1 else k + 1
     return cv2.GaussianBlur(arr.astype(np.float32).reshape(-1, 1), (1, k), 0).ravel()
 
@@ -145,16 +146,8 @@ def fill_ratio_standard(bw, bubble, axes_std):
 
 def preprocess_bw_for_bubbles(roi_bgr):
     gray = cv2.cvtColor(roi_bgr, cv2.COLOR_BGR2GRAY)
-    gray = cv2.GaussianBlur(gray, (5,5), 0)
-    bw = cv2.adaptiveThreshold(
-        gray, 255,
-        cv2.ADAPTIVE_THRESH_MEAN_C,
-        cv2.THRESH_BINARY_INV,
-        35, 10
-    )
-    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3,3))
-    bw = cv2.morphologyEx(bw, cv2.MORPH_OPEN, kernel, iterations=1)
-    bw = cv2.morphologyEx(bw, cv2.MORPH_CLOSE, kernel, iterations=1)
+    gray = cv2.GaussianBlur(gray, (3, 3), 0)
+    _, bw = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV | cv2.THRESH_OTSU)
     return bw
 
 def detect_bubbles(roi_bgr):
@@ -284,16 +277,25 @@ def read_answers_from_bubbles(roi_bgr, fill_threshold=0.30, n_rows=20, n_choices
     if not rows:
         return [], bw, dbg_img
 
-    for r_idx, row in enumerate(rows):
-        row = sorted(row, key=lambda b: b["cx"])[:n_choices]
+    all_cx = [b["cx"] for b in bubbles]
+    min_cx = np.percentile(all_cx, 5)
+    max_cx = np.percentile(all_cx, 95)
+    interval = (max_cx - min_cx) / (n_choices - 1) if n_choices > 1 else 1.0
 
+    for r_idx, row in enumerate(rows):
         active = []
-        for j, b in enumerate(row):
-            # În loc de bubble_fill_ratio -> folosim o mască standard
+        for b in row:
+            # În loc de index j, calculăm coloana din cx
+            col_idx = int(round((b["cx"] - min_cx) / interval))
+            if col_idx < 0 or col_idx >= n_choices:
+                continue
+
             ratio = fill_ratio_standard(bw, b, axes_std)
 
             if ratio >= fill_threshold:
-                active.append("ABCDE"[j])
+                letter = "ABCDE"[col_idx]
+                if letter not in active:
+                    active.append(letter)
 
             if dbg_img is not None:
                 # desenăm elipsa standard ca să vezi exact unde măsori
@@ -304,6 +306,8 @@ def read_answers_from_bubbles(roi_bgr, fill_threshold=0.30, n_rows=20, n_choices
                             cv2.FONT_HERSHEY_SIMPLEX, 0.5,
                             (0, 255, 0) if ratio >= fill_threshold else (0, 0, 255), 1)
 
+        # Sortam literele gasite si le adaugam
+        active.sort()
         answers.append(active)
 
     if debug_path:
@@ -342,7 +346,7 @@ for idx, (x0, y0, x1, y1) in enumerate(boxes):
     # pentru debug: scrie o imagine per chenar
     ans20, bw_roi, _ = read_answers_from_bubbles(
         roi,
-        fill_threshold=0.80,
+        fill_threshold=0.92,
         n_rows=20,
         n_choices=5,
         debug_path=f"dbg_bubbles_active_box_{idx}.png"
@@ -360,4 +364,59 @@ print("Exemplu 1..10 (liste litere active):", [all_answers[i] for i in range(1, 
 print("Exemplu 101..110 (liste litere active):", [all_answers[i] for i in range(101, 111)])
 print("Exemplu 111..120 (liste litere active):", [all_answers[i] for i in range(111, 121)])
 print("Debug: dbg_bubbles_active_box_0.png, dbg_binarized_box_0.png etc.")
+
+# =========================
+# Comparatie cu JSON (Mock)
+# =========================
+
+try:
+    with open("mock_answers.json", "r") as f:
+        mock_correct = json.load(f)
+        
+    print("\n--- COMPARARE REZULTATE CU MOCK JSON ---")
+    score_total = 0
+    max_score = 0
+    
+    for q_str, correct_ans in mock_correct.items():
+        q_idx = int(q_str)
+        if q_idx in all_answers:
+            detected = all_answers[q_idx]
+            
+            # Regulile: 1..50 (25%) sunt simplu complement (4 pct)
+            # 51..200 (75%) sunt complement multiplu (5 pct)
+            if q_idx <= 50:
+                is_simple = True
+                points_possible = 4
+            else:
+                is_simple = False
+                points_possible = 5
+                
+            max_score += points_possible
+            
+            # Verificare corectitudine conform regulilor
+            if is_simple:
+                if len(detected) == 1 and detected == correct_ans:
+                    points = points_possible
+                    status = "✅ CORECT (+4)"
+                else:
+                    points = 0
+                    status = "❌ ANULAT"
+            else:
+                # Complement multiplu: 2-4 raspunsuri corecte
+                if len(detected) >= 2 and len(detected) <= 4 and sorted(detected) == sorted(correct_ans):
+                    points = points_possible
+                    status = "✅ CORECT (+5)"
+                else:
+                    points = 0
+                    status = "❌ ANULAT"
+                    
+            score_total += points
+            
+            print(f"Intrebarea {q_idx:3d} | Asteptat: {str(correct_ans):15s} | Detectat: {str(detected):15s} | {status}")
+            
+    print(f"\nScor final: {score_total} / {max_score}")
+    
+except FileNotFoundError:
+    print("\nFisierul mock_answers.json nu a fost gasit pentru comparare.")
+
 
