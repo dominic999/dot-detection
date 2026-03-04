@@ -1,110 +1,172 @@
+# import cv2
+# import numpy as np
+#
+# def find_bar_candidates(img_bgr, thr=80):
+#     gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
+#     gray = cv2.GaussianBlur(gray, (5,5), 0)
+#
+#     bw = cv2.threshold(gray, thr, 255, cv2.THRESH_BINARY_INV)[1]
+#     bw = cv2.morphologyEx(
+#         bw, cv2.MORPH_CLOSE,
+#         cv2.getStructuringElement(cv2.MORPH_RECT, (11,11)),
+#         iterations=2
+#     )
+#
+#     cnts, _ = cv2.findContours(bw, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+#     H, W = bw.shape
+#     cand = []
+#
+#     for c in cnts:
+#         area = cv2.contourArea(c)
+#         if area < (H*W)*0.0003:
+#             continue
+#
+#         x,y,w,h = cv2.boundingRect(c)
+#         ar = w / float(h+1e-6)
+#
+#         # bară: lată și joasă (ajustezi dacă ai bare “pătrate”)
+#         if ar > 4.0 and w > 0.03*W and h < 0.12*H:
+#             cx = x + w/2
+#             cy = y + h/2
+#             cand.append({
+#                 "cnt": c, "bbox": (x,y,w,h), "area": area, "ar": ar,
+#                 "center": (cx, cy)
+#             })
+#
+#     return cand, bw
+#
+# def pick_4_markers(cand):
+#     if len(cand) < 4:
+#         raise RuntimeError("Nu am găsit 4 markeri. Ajustează threshold/filtrele.")
+#
+#     # folosim centrele
+#     pts = np.array([c["center"] for c in cand], dtype=np.float32)
+#
+#     s = pts[:,0] + pts[:,1]
+#     d = pts[:,0] - pts[:,1]
+#
+#     tl = pts[np.argmin(s)]
+#     br = pts[np.argmax(s)]
+#     tr = pts[np.argmax(d)]
+#     bl = pts[np.argmin(d)]
+#
+#     return np.array([tl, tr, br, bl], dtype=np.float32)
+#
+# def align_by_4_markers(img_bgr, out_size=(3508, 2480), thr=80, debug=True):
+#     cand, bw = find_bar_candidates(img_bgr, thr=thr)
+#     src = pick_4_markers(cand)  # tl,tr,br,bl
+#
+#     Wout, Hout = out_size
+#     margin_x = int(0.08 * Wout)
+#     margin_y = int(0.10 * Hout)
+#
+#     dst = np.array([
+#         [margin_x, margin_y],
+#         [Wout - margin_x, margin_y],
+#         [Wout - margin_x, Hout - margin_y],
+#         [margin_x, Hout - margin_y],
+#     ], dtype=np.float32)
+#
+#     H = cv2.getPerspectiveTransform(src, dst)
+#     aligned = cv2.warpPerspective(img_bgr, H, (Wout, Hout))
+#
+#     dbg = None
+#     if debug:
+#         dbg = img_bgr.copy()
+#         # desenează candidații
+#         for c in cand:
+#             x,y,w,h = c["bbox"]
+#             cv2.rectangle(dbg, (x,y), (x+w,y+h), (0,255,255), 2)
+#         # desenează cei 4 aleși
+#         for i, (x,y) in enumerate(src):
+#             cv2.circle(dbg, (int(x),int(y)), 10, (0,0,255), -1)
+#             cv2.putText(dbg, ["TL","TR","BR","BL"][i], (int(x)+10,int(y)-10),
+#                         cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0,0,255), 2)
+#     return aligned, dbg, bw
+#
+# input_dir = "/home/domi/soft31/detect-poze-test/"
+# output_dir = "/home/domi/soft31/detect-poze-output/"
+# img = cv2.imread(input_dir + "IMG_0530.jpg")
+# aligned, dbg, bw = align_by_4_markers(img, out_size=(3508,2480), thr=80, debug=True)
+#
+# cv2.imwrite(output_dir + "markers_bw.png", bw)
+# cv2.imwrite(output_dir + "markers_debug.png", dbg)
+# cv2.imwrite(output_dir + "aligned.png", aligned)
+
 import cv2
 import numpy as np
 
-def order_points(pts):
-    rect = np.zeros((4, 2), dtype=np.float32)
-    s = pts.sum(axis=1)
-    diff = np.diff(pts, axis=1).ravel()
-    rect[0] = pts[np.argmin(s)]      # tl
-    rect[2] = pts[np.argmax(s)]      # br
-    rect[1] = pts[np.argmin(diff)]   # tr
-    rect[3] = pts[np.argmax(diff)]   # bl
-    return rect
+def highlight_very_black_rectangles(
+    img_bgr,
+    thr=120,                 # prag inițial pt “întunecat” (ajustezi 90–150)
+    min_area_ratio=0.0003,   # ignoră pete mici
+    close_kernel=11,
+    close_iter=2,
+    black_ratio_min=0.95     # >= 95% negre în interiorul bbox
+):
+    """
+    Detectează regiuni foarte negre (>=95% pixeli "întunecați" în bbox) și le colorează.
+    Returnează: out, bw_dark, rects
+      rect = (x,y,w,h, black_ratio)
+    """
 
-def four_point_warp(image, pts):
-    rect = order_points(pts)
-    (tl, tr, br, bl) = rect
-    widthA = np.linalg.norm(br - bl)
-    widthB = np.linalg.norm(tr - tl)
-    maxW = int(max(widthA, widthB))
-    heightA = np.linalg.norm(tr - br)
-    heightB = np.linalg.norm(tl - bl)
-    maxH = int(max(heightA, heightB))
+    gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
+    gray_blur = cv2.GaussianBlur(gray, (5, 5), 0)
 
-    dst = np.array([[0,0],[maxW-1,0],[maxW-1,maxH-1],[0,maxH-1]], dtype=np.float32)
-    M = cv2.getPerspectiveTransform(rect, dst)
-    return cv2.warpPerspective(image, M, (maxW, maxH)), rect
+    # 1) mask pt pixeli întunecați
+    bw_dark = cv2.threshold(gray_blur, thr, 255, cv2.THRESH_BINARY_INV)[1]
 
-def find_paper_and_warp(img_bgr, debug=False):
-    orig = img_bgr.copy()
-    h0, w0 = orig.shape[:2]
+    # 2) close ca să unească dreptunghiurile
+    k = cv2.getStructuringElement(cv2.MORPH_RECT, (close_kernel, close_kernel))
+    bw_dark = cv2.morphologyEx(bw_dark, cv2.MORPH_CLOSE, k, iterations=close_iter)
 
-    # downscale pt viteză și stabilitate
-    scale = 1400.0 / max(h0, w0)
-    img = cv2.resize(orig, (int(w0*scale), int(h0*scale))) if scale < 1 else orig.copy()
+    cnts, _ = cv2.findContours(bw_dark, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    gray = cv2.GaussianBlur(gray, (7,7), 0)
+    H, W = gray.shape
+    min_area = (H * W) * min_area_ratio
 
-    # threshold pe alb (foaia)
-    # OTSU inverse: foaia devine 1 (alb în mask) sau invers, depinde de lumină.
-    # Facem binarizare + apoi alegem varianta cu "componentă mare".
-    _, th = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    out = img_bgr.copy()
+    rects = []
 
-    # dacă fundalul devine alb și foaia neagră, inversăm
-    # (heuristic: foaia ocupă mult, deci vrem mask cu mult alb)
-    if np.mean(th) < 127:
-        th = cv2.bitwise_not(th)
-
-    # închidem găurile din foaie (text/grile) ca să devină un blob compact
-    k = cv2.getStructuringElement(cv2.MORPH_RECT, (25,25))
-    mask = cv2.morphologyEx(th, cv2.MORPH_CLOSE, k, iterations=2)
-
-    # contururi
-    cnts, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    if not cnts:
-        raise RuntimeError("Nu găsesc contururi. Încearcă lumină mai bună / foaia mai contrastată.")
-
-    cnts = sorted(cnts, key=cv2.contourArea, reverse=True)
-
-    paper_cnt = None
-    H, W = mask.shape[:2]
-    img_area = H * W
-
-    for c in cnts[:10]:
+    for c in cnts:
         area = cv2.contourArea(c)
-        if area < 0.20 * img_area:   # foaia trebuie să fie mare
+        if area < min_area:
             continue
 
-        # încearcă să aproximezi în 4 colțuri
-        peri = cv2.arcLength(c, True)
-        approx = cv2.approxPolyDP(c, 0.02 * peri, True)
+        x, y, w, h = cv2.boundingRect(c)
+        if w < 8 or h < 8:
+            continue
 
-        if len(approx) == 4 and cv2.isContourConvex(approx):
-            paper_cnt = approx.reshape(4,2).astype(np.float32)
-            break
+        # 3) calculează cât de "negru" e bbox-ul, folosind gray (NU bw_dark ca să fie corect)
+        patch = gray[y:y+h, x:x+w]
+        if patch.size == 0:
+            continue
 
-    # fallback: dacă nu obții 4 puncte, folosești minAreaRect (mereu dă 4 colțuri)
-    if paper_cnt is None:
-        c = cnts[0]
-        rect = cv2.minAreaRect(c)
-        box = cv2.boxPoints(rect)
-        paper_cnt = box.astype(np.float32)
+        # “negru” = pixeli sub prag
+        black_ratio = float(np.mean(patch < thr))
 
-    warped_small, rect_small = four_point_warp(img, paper_cnt)
+        if black_ratio < black_ratio_min:
+            continue
 
-    # scale back
-    if scale < 1:
-        rect_orig = rect_small / scale
-        warped, _ = four_point_warp(orig, rect_orig)
-    else:
-        warped = warped_small
-        rect_orig = rect_small
+        rects.append((x, y, w, h, black_ratio))
 
-    if debug:
-        dbg = orig.copy()
-        cv2.polylines(dbg, [rect_orig.astype(int)], True, (0,255,0), 4)
-        return warped, dbg, mask
+        # desen: chenar + fill transparent
+        cv2.rectangle(out, (x, y), (x+w, y+h), (0, 255, 0), 3)
+        overlay = out.copy()
+        cv2.rectangle(overlay, (x, y), (x+w, y+h), (0, 255, 0), -1)
+        out = cv2.addWeighted(overlay, 0.20, out, 0.80, 0)
 
-    return warped, None, mask
+        cv2.putText(out, f"{black_ratio:.2f}", (x, max(0, y-8)),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
 
-# ==== utilizare ====
-output_dir = "detect-poze-output"
-input_dir = "detect-poze-test"
-img = cv2.imread(input_dir + "/IMG_0530.jpg")
-warped, dbg, mask = find_paper_and_warp(img, debug=True)
+    rects.sort(key=lambda r: (r[1], r[0]))
+    return out, bw_dark, rects
 
-cv2.imwrite(output_dir + "/paper_warped_detect.png", warped)
-cv2.imwrite(output_dir + "paper_debug_detect.png", dbg)
-cv2.imwrite(output_dir + "paper_mask_detect.png", mask)
-print("Salvat: paper_warped.png + paper_debug.png")
+input_dir = "/home/domi/soft31/detect-poze-test/"
+output_dir = "/home/domi/soft31/detect-poze-output/"
+# ====== Exemplu de utilizare ======
+img = cv2.imread(input_dir + "IMG_0530.jpg")
+out, bw, rects = highlight_very_black_rectangles(img, thr=90)
+cv2.imwrite(output_dir + "black_rects.png", out)
+cv2.imwrite(output_dir + "black_mask.png", bw)
+print("Rectangles:", rects)
