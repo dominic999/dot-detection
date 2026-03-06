@@ -211,4 +211,4 @@ def pick_bars(img_gray, contours):
     cropped = warp_crop_from_quad(bar_img, quad)   # sau img_gray
     save("cropped.png", cropped)
     print("best choice corners:", choice, "area:", area)
-    return kept
+    return kept, cropped
