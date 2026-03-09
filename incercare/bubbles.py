@@ -28,62 +28,108 @@ def find_bubbles(img, index):
         [-1,8,-1],
         [-1,-1,-1]
         ])
-    # gray = cv2.filter2D(gray, -1, kernel2,  anchor=(-1, -1), delta=0, borderType=cv2.BORDER_DEFAULT)
     gray = cv2.filter2D(src=gray, ddepth=-1, kernel=kernel_sharpen)
     # gray = cv2.filter2D(src=gray, ddepth=-1, kernel=kernel_detect)
-    gray = very_black_to_white_else_black(gray)
-    save(f"debug_gray_{index}.png", gray)
+    # gray = cv2.filter2D(gray, -1, kernel_sharpen,  anchor=(-1, -1), delta=0, borderType=cv2.BORDER_DEFAULT)
+    mask = very_black_to_white_else_black(gray)
+    save(f"debug_gray_{index}.png", mask)
 
-    circles = cv2.HoughCircles(
-        gray,
-        cv2.HOUGH_GRADIENT,
-        dp=1.2,
-        # minDist=max(12, gray.shape[0] // 40),
-        minDist=20,
-        param1=10,
-        param2=40,
-        minRadius=20,
-        maxRadius=60,
-    )
+    circles = circles_from_mask(mask, min_area=400, max_area=6000)
 
-    if circles is None:
-        # vis = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
+    if len(img.shape) == 2:
+        vis = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+    else:
         vis = img.copy()
-        save(f"bubbles{index}.png", vis)
-        return []
 
-    kept = []
-    min_area = 1500
-    for x, y, r in np.round(circles[0, :]).astype(int):
-        area = math.pi * (int(r) ** 2)
-        if area < min_area:
-            continue
-        kept.append((int(x), int(y), int(r)))
-
-    vis = img.copy()
-    for x, y, r in kept:
-        cv2.circle(vis, (x, y), r, (0, 255, 0), 2)
-        cv2.circle(vis, (x, y), 2, (0, 0, 255), 2)
+    for c in circles:
+        x, y = c["center"]
+        r = c["r"]
+        cv2.circle(vis, (int(x), int(y)), int(r), (0, 255, 0), 2)
+        cv2.circle(vis, (int(x), int(y)), 2, (0, 0, 255), 2)
 
     save(f"bubbles{index}.png", vis)
 
     bubbles = []
-    for x, y, r in kept:
-        bubbles.append({"cx": x, "cy": y, "r": r})
+    for c in circles:
+        x, y = c["center"]
+        r = c["r"]
+        bubbles.append({"cx": int(x), "cy": int(y), "r": int(r)})
 
     bubbles.sort(key=lambda b: (b["cy"], b["cx"]))
     return bubbles
 
-
-def circles_from_mask(mask, min_area=30, max_area=3000):
-    cnts, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+def circles_from_mask(
+    mask,
+    min_area=30,
+    max_area=3000,
+    min_radius=3,
+    max_radius=100,
+    min_circularity=0.1,
+    min_fill_ratio=0.0,
+    min_solidity=0,
+    max_aspect_ratio_diff=0.5,  # cat de mult poate devia w/h de la 1
+):
+    cnts, _ = cv2.findContours(mask, cv2.RETR_LIST, cv2.CHAIN_APPROX_NONE)
     out = []
+
     for c in cnts:
         area = cv2.contourArea(c)
         if area < min_area or area > max_area:
             continue
-        (x,y), r = cv2.minEnclosingCircle(c)
-        out.append({"center": (x,y), "r": r, "area": area, "cnt": c})
+
+        perimeter = cv2.arcLength(c, True)
+        if perimeter == 0:
+            continue
+
+        # Cerc minim care acopera contour-ul
+        (x, y), r = cv2.minEnclosingCircle(c)
+        if r < min_radius or r > max_radius:
+            continue
+
+        circle_area = math.pi * r * r
+        if circle_area == 0:
+            continue
+
+        # 1) Circularity
+        circularity = 4 * math.pi * area / (perimeter * perimeter)
+
+        # 2) Cat din cerc e ocupat efectiv de contour
+        fill_ratio = area / circle_area
+
+        # 3) Aspect ratio din bounding box
+        bx, by, w, h = cv2.boundingRect(c)
+        if h == 0:
+            continue
+        aspect_ratio = w / h
+        aspect_diff = abs(1.0 - aspect_ratio)
+
+        # 4) Solidity
+        hull = cv2.convexHull(c)
+        hull_area = cv2.contourArea(hull)
+        if hull_area == 0:
+            continue
+        solidity = area / hull_area
+
+        if circularity < min_circularity:
+            continue
+        if fill_ratio < min_fill_ratio:
+            continue
+        if solidity < min_solidity:
+            continue
+        if aspect_diff > max_aspect_ratio_diff:
+            continue
+
+        out.append({
+            "center": (x, y),
+            "r": r,
+            "area": area,
+            "cnt": c,
+            "circularity": circularity,
+            "fill_ratio": fill_ratio,
+            "solidity": solidity,
+            "aspect_ratio": aspect_ratio,
+        })
+
     return out
 
 def very_black_to_white_else_black(img, thr=150):
