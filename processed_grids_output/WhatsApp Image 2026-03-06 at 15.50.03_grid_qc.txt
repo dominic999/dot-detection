@@ -1,0 +1,19 @@
+image=WhatsApp Image 2026-03-06 at 15.50.03_grid
+center_mode=grid_only
+fill_threshold=0.50
+qc_policy=strict_any_bad_ellipse_reject
+qc_bad_boxes=0
+qc_bad_cells=0
+qc_reject=0
+variant=B
+variant_method=contour
+box=00 Q1-20 clahe=0 synthetic=79/100 (0.79) bad_cells=0/100 (0.00)
+box=01 Q21-40 clahe=1 synthetic=20/100 (0.20) bad_cells=0/100 (0.00)
+box=02 Q41-60 clahe=1 synthetic=31/100 (0.31) bad_cells=0/100 (0.00)
+box=03 Q61-80 clahe=1 synthetic=24/100 (0.24) bad_cells=0/100 (0.00)
+box=04 Q81-100 clahe=1 synthetic=15/100 (0.15) bad_cells=0/100 (0.00)
+box=05 Q101-120 clahe=1 synthetic=79/100 (0.79) bad_cells=0/100 (0.00)
+box=06 Q121-140 clahe=1 synthetic=7/100 (0.07) bad_cells=0/100 (0.00)
+box=07 Q141-160 clahe=1 synthetic=0/100 (0.00) bad_cells=0/100 (0.00)
+box=08 Q161-180 clahe=1 synthetic=54/100 (0.54) bad_cells=0/100 (0.00)
+box=09 Q181-200 clahe=1 synthetic=46/100 (0.46) bad_cells=0/100 (0.00)

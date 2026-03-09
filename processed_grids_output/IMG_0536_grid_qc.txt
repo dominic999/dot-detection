@@ -1,0 +1,19 @@
+image=IMG_0536_grid
+center_mode=grid_only
+fill_threshold=0.50
+qc_policy=strict_any_bad_ellipse_reject
+qc_bad_boxes=0
+qc_bad_cells=0
+qc_reject=0
+variant=B
+variant_method=projection
+box=00 Q1-20 clahe=0 synthetic=31/100 (0.31) bad_cells=0/100 (0.00)
+box=01 Q21-40 clahe=0 synthetic=59/100 (0.59) bad_cells=0/100 (0.00)
+box=02 Q41-60 clahe=1 synthetic=35/100 (0.35) bad_cells=0/100 (0.00)
+box=03 Q61-80 clahe=1 synthetic=32/100 (0.32) bad_cells=0/100 (0.00)
+box=04 Q81-100 clahe=0 synthetic=61/100 (0.61) bad_cells=0/100 (0.00)
+box=05 Q101-120 clahe=0 synthetic=74/100 (0.74) bad_cells=0/100 (0.00)
+box=06 Q121-140 clahe=1 synthetic=13/100 (0.13) bad_cells=0/100 (0.00)
+box=07 Q141-160 clahe=1 synthetic=2/100 (0.02) bad_cells=0/100 (0.00)
+box=08 Q161-180 clahe=1 synthetic=12/100 (0.12) bad_cells=0/100 (0.00)
+box=09 Q181-200 clahe=0 synthetic=7/100 (0.07) bad_cells=0/100 (0.00)

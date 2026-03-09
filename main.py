@@ -187,8 +187,9 @@ def fill_ratio_standard(bw, bubble, axes_std):
 
 def preprocess_bw_for_bubbles(roi_bgr):
     gray = cv2.cvtColor(roi_bgr, cv2.COLOR_BGR2GRAY)
-    gray = cv2.GaussianBlur(gray, (3, 3), 0)
-    _, bw = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV | cv2.THRESH_OTSU)
+    # Folosim adaptiveThreshold pentru a face față gradientului de iluminare în poze
+    bw = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+                               cv2.THRESH_BINARY_INV, 25, 10)
     return bw
 
 def detect_bubbles(roi_bgr):
@@ -202,7 +203,6 @@ def detect_bubbles(roi_bgr):
 
     edges = cv2.Canny(gray, 50, 150)
     k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
-    print("k:" + str(k))
     edges = cv2.dilate(edges, k, iterations=1)
 
     contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
@@ -300,7 +300,21 @@ def group_bubbles_into_20_rows(bubbles, n_rows=20):
     return out
 
 def read_answers_from_bubbles(roi_bgr, fill_threshold=0.30, n_rows=20, n_choices=5, debug_path=None):
-    bubbles, _edges = detect_bubbles(roi_bgr)
+    raw_bubbles, _edges = detect_bubbles(roi_bgr)
+    
+    H, W = roi_bgr.shape[:2]
+    
+    # 1. Filtru X (Margin Crop): Numerele sunt mereu in stânga, excludem primii 15% 
+    crop_x = int(W * 0.15)
+    filtered = [b for b in raw_bubbles if b["cx"] >= crop_x]
+    
+    # 2. Filtru Size Consensus: Toate bulele trebuie să fie cam de aceeași mărime
+    if filtered:
+        med_MA = np.median([b["ellipse"][1][0] for b in filtered])
+        # Păstrăm doare cercurile care variază cu +/- 25% față de mediana diametrului
+        bubbles = [b for b in filtered if (med_MA * 0.75) <= b["ellipse"][1][0] <= (med_MA * 1.25)]
+    else:
+        bubbles = []
 
     # bw pentru fill (în interior)
     bw = preprocess_bw_for_bubbles(roi_bgr)
@@ -361,104 +375,104 @@ def read_answers_from_bubbles(roi_bgr, fill_threshold=0.30, n_rows=20, n_choices
 # FLOW
 # =========================
 
-pages = convert_from_path("GrileRezidentiat/farm_C_editat.pdf", 300)
-page_2 = pages[1]
-img = pil_to_bgr(page_2)
+if __name__ == "__main__":
+    pages = convert_from_path("GrileRezidentiat/farm_C_editat.pdf", 300)
+    page_2 = pages[1]
+    img = pil_to_bgr(page_2)
 
-boxes, dbg = get_10_boxes_fixedBands(img)
+    boxes, dbg = get_10_boxes_fixedBands(img)
 
-# DEBUG: desenează box-urile
-debug_boxes = img.copy()
-for i, (x0, y0, x1, y1) in enumerate(boxes):
-    cv2.rectangle(debug_boxes, (x0, y0), (x1, y1), (255, 0, 255), 2)
-    cv2.putText(debug_boxes, str(i), (x0+10, y0+40),
-                cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 0, 255), 2)
-cv2.imwrite("debug_boxes.png", debug_boxes)
-print("Salvat: debug_boxes.png")
+    # DEBUG: desenează box-urile
+    debug_boxes = img.copy()
+    for i, (x0, y0, x1, y1) in enumerate(boxes):
+        cv2.rectangle(debug_boxes, (x0, y0), (x1, y1), (255, 0, 255), 2)
+        cv2.putText(debug_boxes, str(i), (x0+10, y0+40),
+                    cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 0, 255), 2)
+    cv2.imwrite("debug_boxes.png", debug_boxes)
+    print("Salvat: debug_boxes.png")
 
-# =========================
-# Citește răspunsuri pe baza bulinelor (prag 30%)
-# =========================
+    # =========================
+    # Citește răspunsuri pe baza bulinelor (prag 30%)
+    # =========================
 
-all_answers = {}  # q -> list de litere active ([], ['B'], ['A','D'] etc.)
+    all_answers = {}  # q -> list de litere active ([], ['B'], ['A','D'] etc.)
 
-for idx, (x0, y0, x1, y1) in enumerate(boxes):
-    roi = img[y0:y1, x0:x1]
+    for idx, (x0, y0, x1, y1) in enumerate(boxes):
+        roi = img[y0:y1, x0:x1]
 
-    # pentru debug: scrie o imagine per chenar
-    ans20, bw_roi, _ = read_answers_from_bubbles(
-        roi,
-        fill_threshold=0.92,
-        n_rows=20,
-        n_choices=5,
-        debug_path=f"dbg_bubbles_active_box_{idx}.png"
-    )
-    cv2.imwrite(f"dbg_binarized_box_{idx}.png", bw_roi)
+        # pentru debug: scrie o imagine per chenar
+        ans20, bw_roi, _ = read_answers_from_bubbles(
+            roi,
+            fill_threshold=0.92,
+            n_rows=20,
+            n_choices=5,
+            debug_path=f"dbg_bubbles_active_box_{idx}.png"
+        )
+        cv2.imwrite(f"dbg_binarized_box_{idx}.png", bw_roi)
 
-    col = idx % 5
-    block = idx // 5
-    q_start = (1 + col * 20) if block == 0 else (101 + col * 20)
+        col = idx % 5
+        block = idx // 5
+        q_start = (1 + col * 20) if block == 0 else (101 + col * 20)
 
-    for i, active_letters in enumerate(ans20):
-        all_answers[q_start + i] = active_letters
+        for i, active_letters in enumerate(ans20):
+            all_answers[q_start + i] = active_letters
 
-print("Exemplu 1..10 (liste litere active):", [all_answers[i] for i in range(1, 11)])
-print("Exemplu 101..110 (liste litere active):", [all_answers[i] for i in range(101, 111)])
-print("Exemplu 111..120 (liste litere active):", [all_answers[i] for i in range(111, 121)])
-print("Debug: dbg_bubbles_active_box_0.png, dbg_binarized_box_0.png etc.")
+    print("Exemplu 1..10 (liste litere active):", [all_answers.get(i, []) for i in range(1, 11)])
+    print("Exemplu 101..110 (liste litere active):", [all_answers.get(i, []) for i in range(101, 111)])
+    print("Exemplu 111..120 (liste litere active):", [all_answers.get(i, []) for i in range(111, 121)])
+    print("Debug: dbg_bubbles_active_box_0.png, dbg_binarized_box_0.png etc.")
 
-# =========================
-# Comparatie cu JSON (Mock)
-# =========================
+    # =========================
+    # Comparatie cu JSON (Mock)
+    # =========================
 
-try:
-    with open("mock_answers.json", "r") as f:
-        mock_correct = json.load(f)
+    try:
+        with open("mock_answers.json", "r") as f:
+            mock_correct = json.load(f)
+            
+        print("\n--- COMPARARE REZULTATE CU MOCK JSON ---")
+        score_total = 0
+        max_score = 0
         
-    print("\n--- COMPARARE REZULTATE CU MOCK JSON ---")
-    score_total = 0
-    max_score = 0
-    
-    for q_str, correct_ans in mock_correct.items():
-        q_idx = int(q_str)
-        if q_idx in all_answers:
-            detected = all_answers[q_idx]
-            
-            # Regulile: 1..50 (25%) sunt simplu complement (4 pct)
-            # 51..200 (75%) sunt complement multiplu (5 pct)
-            if q_idx <= 50:
-                is_simple = True
-                points_possible = 4
-            else:
-                is_simple = False
-                points_possible = 5
+        for q_str, correct_ans in mock_correct.items():
+            q_idx = int(q_str)
+            if q_idx in all_answers:
+                detected = all_answers[q_idx]
                 
-            max_score += points_possible
-            
-            # Verificare corectitudine conform regulilor
-            if is_simple:
-                if len(detected) == 1 and detected == correct_ans:
-                    points = points_possible
-                    status = "✅ CORECT (+4)"
+                # Regulile: 1..50 (25%) sunt simplu complement (4 pct)
+                # 51..200 (75%) sunt complement multiplu (5 pct)
+                if q_idx <= 50:
+                    is_simple = True
+                    points_possible = 4
                 else:
-                    points = 0
-                    status = "❌ ANULAT"
-            else:
-                # Complement multiplu: 2-4 raspunsuri corecte
-                if len(detected) >= 2 and len(detected) <= 4 and sorted(detected) == sorted(correct_ans):
-                    points = points_possible
-                    status = "✅ CORECT (+5)"
-                else:
-                    points = 0
-                    status = "❌ ANULAT"
+                    is_simple = False
+                    points_possible = 5
                     
-            score_total += points
-            
-            print(f"Intrebarea {q_idx:3d} | Asteptat: {str(correct_ans):15s} | Detectat: {str(detected):15s} | {status}")
-            
-    print(f"\nScor final: {score_total} / {max_score}")
-    
-except FileNotFoundError:
-    print("\nFisierul mock_answers.json nu a fost gasit pentru comparare.")
-
+                max_score += points_possible
+                
+                # Verificare corectitudine conform regulilor
+                if is_simple:
+                    if len(detected) == 1 and detected == correct_ans:
+                        points = points_possible
+                        status = "✅ CORECT (+4)"
+                    else:
+                        points = 0
+                        status = "❌ ANULAT"
+                else:
+                    # Complement multiplu: 2-4 raspunsuri corecte
+                    if len(detected) >= 2 and len(detected) <= 4 and sorted(detected) == sorted(correct_ans):
+                        points = points_possible
+                        status = "✅ CORECT (+5)"
+                    else:
+                        points = 0
+                        status = "❌ ANULAT"
+                        
+                score_total += points
+                
+                print(f"Intrebarea {q_idx:3d} | Asteptat: {str(correct_ans):15s} | Detectat: {str(detected):15s} | {status}")
+                
+        print(f"\nScor final: {score_total} / {max_score}")
+        
+    except FileNotFoundError:
+        print("\nFisierul mock_answers.json nu a fost gasit pentru comparare.")
 

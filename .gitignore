@@ -1,0 +1,12 @@
+# Ignore all images
+*.jpg
+*.jpeg
+*.png
+*.bmp
+*.gif
+*.tif
+*.tiff
+*.webp
+
+# Ignore all JSON files
+*.json
