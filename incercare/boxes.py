@@ -236,6 +236,7 @@ def get_10_boxes_from_warp(warp_bgr,
         for c in range(5):
             x0 = max(0, xb[c] - pad_x)
             x1 = 0
+            #NOTE asta inseamna ca e ultima matrice
             if(W - xb[c+1] - pad_x < 20):
                 x1 = max(W, xb[c+1] + pad_x)
             else:

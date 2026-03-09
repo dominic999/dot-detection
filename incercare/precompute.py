@@ -27,6 +27,52 @@ def findShapes(img_gray):
 
     contours, _ = cv2.findContours(thresh, cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
     return img_gray, contours
+def find_edge_squares(img):
+    H, W = img.shape[:2]
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    margins = 20
+    _, thresh = cv2.threshold(gray, 127, 255, cv2.THRESH_BINARY_INV)
+
+    mask = np.zeros(gray.shape[:2], dtype="uint8")
+    print("shape:" + str(mask.shape))
+    cv2.rectangle(mask,(0,0),(W,H),255,int(W*0.05));
+    mask[:20] = 0
+    mask[:, :20] = 0
+    mask[-20:] = 0
+    mask[:, -20:] = 0
+    
+    masked_image = cv2.bitwise_and(thresh, thresh, mask=mask)
+    save("mask-try.png", mask);
+    save("imagine-acoperita.png", masked_image)
+    contours, _ = cv2.findContours(masked_image, cv2.RETR_TREE, 
+                                   cv2.CHAIN_APPROX_NONE)
+    for cnt in contours:
+        # epsilon = 0.01 * cv2.arcLength(cnt, True)
+        # approx = cv2.approxPolyDP(cnt, epsilon, True)
+        # cv2.drawContours(img, [approx], 0, (255,255,3), 5)
+        rect = cv2.minAreaRect(cnt)
+        h = abs(rect[0][0] - rect[1][0])
+        w = abs(rect[0][1] - rect[1][1])
+        rect_area = h * w
+        if rect_area < 1000000 :
+            continue
+        print("rect:")
+        print(rect)
+        box = cv2.boxPoints(rect)
+        box = box.astype(np.int32)
+        print("box:")
+        print(box)
+        cv2.drawContours(img,[box],0,(0,0,255),2)
+        # cv2.putText(img, rect_area, (box[0]))
+        # x,y,w,h = cv2.boundingRect(cnt)
+        # cv2.rectangle(img,(x,y),(x+w,y+h),(0,255,0),2)
+    save("contururi-gasit.png", img)
+    # for row in mask:
+    #     for col in row:
+    #         for pixel in col:
+                
+
+
 
 def order_quad_by_angle(pts4):
     """
@@ -183,7 +229,7 @@ def pick_bars(img_gray, contours):
 
     save("contours.png", bar_img)
 
-    # trebuie exact 4
+    trebuie exact 4
     if len(kept) != 4:
         print("POZA NU ESTE BUNA! (nu am 4 markeri)")
         return kept

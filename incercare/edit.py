@@ -8,6 +8,8 @@ def warp_crop_from_quad(img, quad):
     Return: imaginea decupată și îndreptată (warp perspective)
     """
     quad = np.asarray(quad, dtype=np.float32)
+    print("quad")
+    print(quad)
     (tl, tr, br, bl) = quad
 
     # lățime = max(dist TR-TL, BR-BL)
