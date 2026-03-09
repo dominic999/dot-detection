@@ -119,7 +119,7 @@ def find_best_horizontal_gap(proj_y, mid_frac=0.52, band=0.20):
 
 def get_10_boxes_from_warp(warp_bgr,
                            top_crop=0.06, bottom_crop=0.90,
-                           pad_x=10, pad_y=10):
+                           pad_x=0, pad_y=10):
     """
     warp_bgr: imaginea ta mare (îndreptată) care conține doar grila.
     Returnează 10 box-uri (x0,y0,x1,y1) în coordonate warp.
@@ -235,13 +235,21 @@ def get_10_boxes_from_warp(warp_bgr,
         y1 = min(H, yy1 + pad_y)
         for c in range(5):
             x0 = max(0, xb[c] - pad_x)
-            x1 = min(W, xb[c+1] + pad_x)
+            x1 = max(W, xb[c+1] + pad_x)
             boxes.append((x0, y0, x1, y1))
 
     return boxes, xb, y_cut
 
 def save_10_boxes(warp_bgr, out_dir="output_boxes"):
 
+    pad_left = 35
+    pad_left_first = 3
+    pad_right_last = 0
+    pad_right = 100
+    pad_bot_top_half = 45
+    pad_top_top_half = 104
+    pad_bot_bottom_half = 100
+    pad_top_bottom_half = 30
     boxes, xb, y_cut = get_10_boxes_from_warp(warp_bgr, pad_x=5, pad_y=8)
 
     # debug desen
@@ -255,8 +263,26 @@ def save_10_boxes(warp_bgr, out_dir="output_boxes"):
 
     # salvează crop-urile
     for i, (x0,y0,x1,y1) in enumerate(boxes):
-        roi = warp_bgr[y0+100:y1-30, x0+32:x1-100]
-        save(f"box_{i}.png", roi)
+        if(i <= 4):
+            if(i == 0 or i ==5):
+                roi = warp_bgr[y0+pad_top_top_half:y1-pad_bot_top_half, x0+pad_left_first:x1-pad_right]
+                save(f"box_{i}.png", roi)
+            elif(i == 4 or i == 9):
+                roi = warp_bgr[y0+pad_top_top_half:y1-pad_bot_top_half, x0+pad_left:x1-pad_right_last]
+                save(f"box_{i}.png", roi)
+            else:
+                roi = warp_bgr[y0+pad_top_top_half:y1-pad_bot_top_half, x0+pad_left:x1-pad_right]
+                save(f"box_{i}.png", roi)
+        else:
+            if(i == 0 or i ==5):
+                roi = warp_bgr[y0+pad_top_bottom_half:y1-pad_bot_bottom_half, x0+pad_left_first:x1-pad_right]
+                save(f"box_{i}.png", roi)
+            elif(i == 4 or i == 9):
+                roi = warp_bgr[y0+pad_top_bottom_half:y1-pad_bot_bottom_half, x0+pad_left:x1-pad_right_last]
+                save(f"box_{i}.png", roi)
+            else:
+                roi = warp_bgr[y0+pad_top_bottom_half:y1-pad_bot_bottom_half, x0+pad_left:x1-pad_right]
+                save(f"box_{i}.png", roi)
 
 
     return boxes

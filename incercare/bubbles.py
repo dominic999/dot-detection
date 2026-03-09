@@ -38,6 +38,7 @@ def find_bubbles(img, index):
     circles = circles_from_mask(mask, 
                                 min_area=400, 
                                 max_area=6000)
+    circles = suppress_duplicate_circles(circles)
 
     if len(img.shape) == 2:
         vis = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
@@ -60,6 +61,38 @@ def find_bubbles(img, index):
 
     bubbles.sort(key=lambda b: (b["cy"], b["cx"]))
     return bubbles
+
+def suppress_duplicate_circles(circles, min_center_dist_factor=0.80):
+    """
+    Pastreaza un singur cerc atunci cand mai multe detectii cad aproape in acelasi loc.
+    Alegem cercul cu circularitate/arie mai buna si ignoram restul.
+    """
+    kept = []
+    ordered = sorted(
+        circles,
+        key=lambda c: (c["circularity"], c["area"]),
+        reverse=True,
+    )
+
+    for circle in ordered:
+        cx, cy = circle["center"]
+        r = circle["r"]
+        is_duplicate = False
+
+        for kept_circle in kept:
+            kx, ky = kept_circle["center"]
+            kr = kept_circle["r"]
+            dist = math.hypot(cx - kx, cy - ky)
+            min_dist = max(r, kr) * min_center_dist_factor
+            if dist < min_dist:
+                is_duplicate = True
+                break
+
+        if not is_duplicate:
+            kept.append(circle)
+
+    kept.sort(key=lambda c: (c["center"][1], c["center"][0]))
+    return kept
 
 def circles_from_mask(
     mask,

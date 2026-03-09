@@ -10,7 +10,7 @@ def get_10_boxes_from_warp(
     top_crop=0.05,
     bottom_crop=0.90,
     left_crop=0.05,
-    right_crop=0.90,
+    right_crop=1,
     pad_x=10,
     pad_y=10,
 ):
