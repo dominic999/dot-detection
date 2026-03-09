@@ -235,7 +235,11 @@ def get_10_boxes_from_warp(warp_bgr,
         y1 = min(H, yy1 + pad_y)
         for c in range(5):
             x0 = max(0, xb[c] - pad_x)
-            x1 = max(W, xb[c+1] + pad_x)
+            x1 = 0
+            if(W - xb[c+1] - pad_x < 20):
+                x1 = max(W, xb[c+1] + pad_x)
+            else:
+                x1 = min(W, xb[c+1] + pad_x)
             boxes.append((x0, y0, x1, y1))
 
     return boxes, xb, y_cut
