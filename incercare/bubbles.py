@@ -28,13 +28,16 @@ def find_bubbles(img, index):
         [-1,8,-1],
         [-1,-1,-1]
         ])
-    gray = cv2.filter2D(src=gray, ddepth=-1, kernel=kernel_sharpen)
+    # gray = cv2.filter2D(src=gray, ddepth=-1, kernel=kernel_sharpen)
     # gray = cv2.filter2D(src=gray, ddepth=-1, kernel=kernel_detect)
-    # gray = cv2.filter2D(gray, -1, kernel_sharpen,  anchor=(-1, -1), delta=0, borderType=cv2.BORDER_DEFAULT)
+    gray = cv2.filter2D(gray, -1, kernel_sharpen,  anchor=(-1, -1), delta=0, borderType=cv2.BORDER_DEFAULT)
     mask = very_black_to_white_else_black(gray)
     save(f"debug_gray_{index}.png", mask)
 
-    circles = circles_from_mask(mask, min_area=400, max_area=6000)
+    # Bulele foarte slab conturate ajung adesea cu arie mai mică după binarizare.
+    circles = circles_from_mask(mask, 
+                                min_area=400, 
+                                max_area=6000)
 
     if len(img.shape) == 2:
         vis = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
@@ -64,10 +67,10 @@ def circles_from_mask(
     max_area=3000,
     min_radius=3,
     max_radius=100,
-    min_circularity=0.1,
+    min_circularity=0.2,
     min_fill_ratio=0.0,
     min_solidity=0,
-    max_aspect_ratio_diff=0.5,  # cat de mult poate devia w/h de la 1
+    max_aspect_ratio_diff=0.3,  # cat de mult poate devia w/h de la 1
 ):
     cnts, _ = cv2.findContours(mask, cv2.RETR_LIST, cv2.CHAIN_APPROX_NONE)
     out = []
@@ -132,7 +135,7 @@ def circles_from_mask(
 
     return out
 
-def very_black_to_white_else_black(img, thr=150):
+def very_black_to_white_else_black(img, thr=160):
     """
     Transformare binară:
       - pixel devine ALB (255) dacă e foarte negru (aproape 0)
@@ -145,8 +148,15 @@ def very_black_to_white_else_black(img, thr=150):
     if img.ndim == 3:  # BGR
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     else:
-        gray = img
+        gray = img.copy()
+
+    # Netezim puțin înainte de prag ca să nu rupem inelele foarte subțiri.
+    gray = cv2.GaussianBlur(gray, (1, 1), 0)
 
     # 255 unde gray < thr, altfel 0
     mask = (gray < thr).astype(np.uint8) * 255
+
+    # Leagă golurile mici din conturul elipsei fără să umfle agresiv forma.
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=1)
     return mask

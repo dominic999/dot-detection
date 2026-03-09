@@ -118,7 +118,7 @@ def find_best_horizontal_gap(proj_y, mid_frac=0.52, band=0.20):
     return a + (left + right) // 2
 
 def get_10_boxes_from_warp(warp_bgr,
-                           top_crop=0.06, bottom_crop=0.06,
+                           top_crop=0.06, bottom_crop=0.90,
                            pad_x=10, pad_y=10):
     """
     warp_bgr: imaginea ta mare (îndreptată) care conține doar grila.
@@ -153,7 +153,7 @@ def get_10_boxes_from_warp(warp_bgr,
 
     # ignoră barele negre margini sus/jos ca să nu strice proiecțiile
     yA = int(H * top_crop)
-    yB = int(H * (1 - bottom_crop))
+    yB = int(H * bottom_crop)
     bw_mid = bw[yA:yB, :]
 
     # Delimitări verticale:
@@ -255,7 +255,8 @@ def save_10_boxes(warp_bgr, out_dir="output_boxes"):
 
     # salvează crop-urile
     for i, (x0,y0,x1,y1) in enumerate(boxes):
-        roi = warp_bgr[y0:y1, x0:x1]
+        roi = warp_bgr[y0+100:y1-30, x0+32:x1-100]
         save(f"box_{i}.png", roi)
+
 
     return boxes

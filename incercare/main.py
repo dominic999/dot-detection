@@ -12,7 +12,7 @@ image = cv2.imread(INPUT_DIR + file_path)
 gray_image = turnGray(image)
 shapes_img, contours = findShapes(gray_image)
 points, cropped_image = pick_bars(shapes_img, contours) 
-save_10_boxes(cropped_image)
+boxes = save_10_boxes(cropped_image)
 
 for i in range(10):
     path = OUTPUT_DIR + "box_" + str(i) + ".png"
